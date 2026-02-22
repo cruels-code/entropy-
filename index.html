@@ -1,463 +1,604 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8" />
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pixel Drift: Evolved</title>
-    <script src="https://cdn.jsdelivr.net/npm/textmode.js@0.3.0/dist/textmode.umd.js"></script>
     <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #000;
-            touch-action: none;
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+        #simulation-container { width: 100%; height: 100%; position: relative; }
+        .hide-cursor { cursor: none; }
+        
+        #overlay { 
+            position: absolute; 
+            inset: 0; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            z-index: 50; 
+            pointer-events: none; 
+            color: white; 
+            font-family: monospace; 
+            font-size: 14px; 
+            padding: 1rem; 
+            text-align: center; 
         }
-        canvas {
-            display: block;
-            width: 100vw;
-            height: 100vh;
-            image-rendering: pixelated;
-            image-rendering: crisp-edges;
+        
+        .error-box { 
+            background: rgba(127, 29, 29, 0.8); 
+            padding: 1rem; 
+            border-radius: 0.5rem; 
+            border: 1px solid #ef4444; 
+            max-width: 28rem; 
+            display: none;
         }
-        body.hide-cursor, body.hide-cursor * {
-            cursor: none;
+        
+        .status-box { 
+            background: rgba(0, 0, 0, 0.5); 
+            padding: 0.5rem 1rem; 
+            border-radius: 9999px; 
+            border: 1px solid rgba(255, 255, 255, 0.2); 
+            backdrop-filter: blur(4px); 
         }
+        
+        .retry-btn { 
+            margin-top: 1rem; 
+            padding: 0.5rem 1rem; 
+            background: #b91c1c; 
+            border-radius: 0.25rem; 
+            color: white; 
+            pointer-events: auto; 
+            border: none; 
+            cursor: pointer; 
+            transition: background-color 0.2s;
+        }
+        
+        .retry-btn:hover { background: #dc2626; }
     </style>
 </head>
-
 <body>
-    <script>
+    <div id="simulation-container">
+        <div id="overlay">
+            <div id="status-msg" class="status-box">Initializing...</div>
+            <div id="error-msg" class="error-box">
+                <p style="font-weight: bold; margin: 0 0 0.5rem 0; color: #fecaca;">ERROR</p>
+                <p id="error-text" style="color: #fee2e2; margin: 0;"></p>
+                <button class="retry-btn" onclick="location.reload()">Retry</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as textmodeModule from 'https://cdn.skypack.dev/textmode.js@0.3.0';
+        const textmode = textmodeModule.default || textmodeModule;
+        window.textmode = textmode;
+        
+        // UI Helpers
+        const statusEl = document.getElementById('status-msg');
+        const errorEl = document.getElementById('error-msg');
+        const errorTextEl = document.getElementById('error-text');
+        const container = document.getElementById('simulation-container');
+
+        function setStatus(msg) {
+            if (msg) {
+                statusEl.style.display = 'block';
+                statusEl.textContent = msg;
+            } else {
+                statusEl.style.display = 'none';
+            }
+        }
+
+        function setError(msg) {
+            setStatus('');
+            errorEl.style.display = 'block';
+            errorTextEl.textContent = msg;
+            console.error(msg);
+        }
+
+        // Main Initialization
         (function() {
-            // === GLSL SHADER DEFINITIONS ===
+            console.log("Initializing Pixel Drift...");
+            setStatus("Checking environment...");
 
-            const InitialPixelShader = `#version 300 es
-            precision highp float;
-            uniform float u_frameCount;
-            uniform vec2 u_gridSize;
-            layout(location = 0) out vec4 o_character;
-            layout(location = 1) out vec4 o_primaryColor;
-            layout(location = 2) out vec4 o_secondaryColor;
-            layout(location = 3) out vec4 o_rotation;
-            layout(location = 4) out vec4 o_transform;
-            void main() {
-                vec2 uv = gl_FragCoord.xy / u_gridSize;
-                // Start with a clean half black / half white split
-                float val = (uv.x < 0.5) ? 1.0 : 0.0;
-                o_character = vec4(219.0/255.0, 0.0f, 0.0f, 1.0f);
-                o_primaryColor = vec4(vec3(val), 1.0f);
-                o_secondaryColor = vec4(vec3(val), 1.0f); 
-                o_rotation = vec4(0.0f, 0.0f, 0.0f, 1.0f);
-                o_transform = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+            // Check if textmode is loaded
+            if (!textmode || typeof textmode.create !== 'function') {
+                const type = typeof textmode;
+                const keys = textmode ? Object.keys(textmode).join(', ') : 'null';
+                setError(`textmode.js not loaded correctly. Type: ${type}, Keys: ${keys}`);
+                return;
             }
-            `;
 
-            const PixelDisplacementShader = `#version 300 es
-            precision highp float;
-            in vec2 v_uv;
-            uniform float u_frameCount;
-            uniform vec2 u_gridSize;
-            uniform vec4 u_rect0, u_rect1, u_rect2, u_rect3, u_rect4;
-            uniform int u_effect0, u_effect1, u_effect2, u_effect3, u_effect4;
-            uniform bool u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4;
-            uniform sampler2D u_previousPrimaryColor;
-
-            layout(location = 0) out vec4 o_character;
-            layout(location = 1) out vec4 o_primaryColor;
-            layout(location = 2) out vec4 o_secondaryColor;
-            layout(location = 3) out vec4 o_rotation;
-            layout(location = 4) out vec4 o_transform;
-
-            float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
-            float noise(vec2 st) {
-                vec2 i = floor(st); vec2 f = fract(st); vec2 u = f*f*(3.0-2.0*f);
-                float a = random(i); float b = random(i + vec2(1.0, 0.0));
-                float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
-                return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+            // Check WebGL 2 support
+            const canvasTest = document.createElement('canvas');
+            const gl = canvasTest.getContext('webgl2');
+            if (!gl) {
+                setError("WebGL 2 not supported on this device. This simulation requires WebGL 2.");
+                return;
             }
-            bool insideBox(vec2 point, vec2 bottomLeft, vec2 topRight) { return all(greaterThanEqual(point, bottomLeft)) && all(lessThan(point, topRight)); }
 
-            void main() {
-                vec2 u_resolution = u_gridSize;
-                float u_time = u_frameCount * 0.01;
-                vec2 texelSize = 1.0f / u_resolution;
-                vec2 offset = vec2(0.0f);
-                vec4 rects[5] = vec4[](u_rect0, u_rect1, u_rect2, u_rect3, u_rect4);
-                int effects[5] = int[](u_effect0, u_effect1, u_effect2, u_effect3, u_effect4);
-                bool inversions[5] = bool[](u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4);
-
-                int zoneIndex = -1;
-                for(int i = 0; i < 5; i++) {
-                    vec2 bottomLeft = rects[i].xy / u_resolution;
-                    vec2 topRight = (rects[i].xy + rects[i].zw) / u_resolution;
-                    if (insideBox(v_uv, bottomLeft, topRight)) { zoneIndex = i; break; }
-                }
-                
-                if (zoneIndex != -1) {
-                    int eff = effects[zoneIndex];
-                    vec2 center = rects[zoneIndex].xy + rects[zoneIndex].zw * 0.5;
-                    float radius = length(rects[zoneIndex].zw * 0.5);
-                    vec2 rel = (gl_FragCoord.xy - rects[zoneIndex].xy) / rects[zoneIndex].zw;
-
-                    if (eff == 0) { offset.y = -2.0 * texelSize.y; } // Rain
-                    else if (eff == 1) { if (mod(u_frameCount, 45.0) < 4.0) { offset.x = floor(random(vec2(floor(u_frameCount/45.0)))*30.0-15.0) * texelSize.x; } } // Glitch
-                    else if (eff == 2) { vec2 fromCenter = gl_FragCoord.xy - center; if(radius > 0.0 && length(fromCenter) > 0.0) { offset = normalize(fromCenter) * texelSize * (length(fromCenter)/radius)*3.0;} } // Explode
-                    else if (eff == 3) { offset = vec2(0.0); } // Shuffle (in Push)
-                    else if (eff == 4) { vec2 toCenter = center - gl_FragCoord.xy; if(length(toCenter) > 0.0) { offset = normalize(toCenter) * texelSize;} } // Implode
-                    else if (eff == 5) { vec2 nCoord = v_uv * 4.0 + u_time * 0.2; offset = vec2(noise(nCoord)-0.5, noise(nCoord+vec2(15.7,-15.7))-0.5)*texelSize*3.0; } // Turbulence
-                    else if (eff == 6) { offset.y = 2.0 * texelSize.y; } // Rise
-                    else if (eff == 7) { offset.x = 2.0 * texelSize.x; } // Wind
-                    else if (eff == 8) { vec2 toCenter = center-gl_FragCoord.xy; vec2 perp = vec2(-toCenter.y, toCenter.x); if(length(toCenter)>0.0){ offset=normalize(toCenter*0.5+perp)*texelSize*2.0;} } // Vortex
-                    else if (eff == 9) { offset.y = sin(gl_FragCoord.x * 0.1 + u_time * 2.0) * 5.0 * texelSize.y; } // Wave
-                    else if (eff == 10) { float speed = (1.0 - rel.y) * 5.0 + 1.0; offset.y = -1.0 * texelSize.y * speed; } // Gravity
-                    else if (eff == 11) { offset.x = (rel.y - 0.5) * 10.0 * texelSize.x; } // Shear
-                    else if (eff == 12) { vec2 fromCenter=gl_FragCoord.xy-center; float dist=length(fromCenter); float angle=0.1*(radius-dist)/radius; mat2 R=mat2(cos(angle),-sin(angle),sin(angle),cos(angle)); offset=(R*fromCenter-fromCenter)*5.0; } // Twirl
-                    else if (eff == 13) { float gSize=10.0; vec2 snapped = floor(gl_FragCoord.xy/gSize)*gSize+gSize*0.5; offset=(snapped - gl_FragCoord.xy)*0.5; } // Grid Snap
-                    else if (eff == 14) { float c = mod(floor(gl_FragCoord.x/8.0)+floor(gl_FragCoord.y/8.0),2.0); offset = (c==0.0?vec2(-1,-1):vec2(1,1))*texelSize; } // Checkerboard
-                    else if (eff == 15) { vec2 fromCenter=gl_FragCoord.xy-center; float dist=length(fromCenter); if(dist>0.0 && radius > 0.0){float f=pow(dist/radius,2.0); offset=normalize(fromCenter)*f*texelSize*10.0;} } // Fisheye
-                    else if (eff == 16) { vec2 fromCenter=gl_FragCoord.xy-center; float dist=length(fromCenter); if(dist>0.0 && radius > 0.0){float p=1.0-dist/radius; offset=-normalize(fromCenter)*p*texelSize*10.0;} } // Pinch
-                    else if (eff == 17) { if (mod(floor(gl_FragCoord.y), 4.0) == 0.0) { offset.x = 2.0 * texelSize.x;} } // Scanlines
-                    else if (eff == 18) { offset = vec2(random(v_uv+u_time)-0.5, random(v_uv-u_time)-0.5)*2.0*texelSize; } // Jitter
-                    else if (eff == 19) { offset = vec2(0.0); } // Flicker Step (in Push)
-                    else if (eff == 20) { offset = vec2(0.0); } // Drunk Walk (in Push)
-                    else if (eff == 21) { offset = vec2(0.0); } // Pixel Sort (in Push)
-                    else if (eff == 22) { // Lum Sort logic
-                        vec3 mc = texture(u_previousPrimaryColor, v_uv).rgb;
-                        vec2 rd = normalize(vec2(random(v_uv + u_time)-0.5, random(v_uv - u_time)-0.5));
-                        vec3 nc = texture(u_previousPrimaryColor, v_uv + rd * texelSize).rgb;
-                        if(distance(mc, nc) < 0.2) offset = rd * texelSize;
-                    }
-                    else if (eff == 23) { // Barrel Distortion
-                        vec2 fromC = (gl_FragCoord.xy - center) / rects[zoneIndex].zw;
-                        float amount = 1.75;
-                        float r2 = dot(fromC, fromC);
-                        vec2 newUv = fromC * (1.0 + amount * r2);
-                        vec2 newP = center + newUv * rects[zoneIndex].zw;
-                        offset = (newP - gl_FragCoord.xy) * 0.2;
-                    }
-                    else if (eff == 24) { // Stretch
-                        vec2 fromC = gl_FragCoord.xy - center;
-                        float amount = sin(u_time) * 0.5;
-                        vec2 newP = center + fromC * (1.0 + amount * normalize(fromC));
-                        offset = (newP - gl_FragCoord.xy) * 0.1;
-                    }
-                    else if (eff == 25) { // Displacement Shift 
-                        vec3 mc = texture(u_previousPrimaryColor, v_uv).rgb;
-                        float amount = 5.0; 
-                        offset.x = (mc.r - 0.5) * amount * texelSize.x;
-                        offset.y = (mc.g - 0.5) * amount * texelSize.y;
-                    }
-                    else if (eff == 26) { // Zoom
-                        vec2 fromC = gl_FragCoord.xy - center;
-                        float dist = length(fromC);
-                        if (dist > 0.0) offset = normalize(fromC) * 0.01 * dist * 2.0;
-                    }
-                    else if (eff == 27) { // Liquify
-                        float angle = noise(v_uv * 10.0 + u_time) * 6.28318; 
-                        offset = vec2(cos(angle), sin(angle)) * 0.005 * u_resolution * texelSize;
-                    }
-                    else if (eff == 28) { // Displacement Mapping
-                        vec2 noiseC = v_uv * 8.0 + u_time;
-                        offset = vec2(noise(noiseC)-0.5, noise(noiseC + vec2(10.3, 5.8))-0.5) * 10.0 * texelSize;
-                    }
-                    else if (eff == 29) { offset = vec2(0.0); } // Slit-Scan (in Push)
-                    else if (eff == 30) { offset = vec2(0.0); } // Recursive Feedback (in Push)
-
-                    if (inversions[zoneIndex]) offset *= -1.0;
-                }
-
-                vec2 offsetInPixels = floor(offset * u_resolution + 0.5f);
-                offsetInPixels = clamp(offsetInPixels, -1.0f, 1.0f);
-                vec4 shiftResult = vec4((offsetInPixels.x + 1.0f) * 0.5f, (offsetInPixels.y + 1.0f) * 0.5f, 0.0f, 1.0f);
-                o_character = shiftResult; o_primaryColor = shiftResult; o_secondaryColor = shiftResult; o_rotation = shiftResult; o_transform = shiftResult;
-            }
-            `;
-
-            const PixelUpdateShader = `#version 300 es
-            precision highp float;
-            uniform sampler2D u_shiftMap;
-            uniform sampler2D u_previousCharacter;
-            uniform sampler2D u_previousPrimaryColor;
-            uniform sampler2D u_previousSecondaryColor;
-            uniform vec2 u_gridSize;
-            uniform float u_frameCount;
-            uniform vec4 u_rect0, u_rect1, u_rect2, u_rect3, u_rect4;
-            uniform int u_effect0, u_effect1, u_effect2, u_effect3, u_effect4;
-            uniform bool u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4;
-
-            layout(location = 0) out vec4 o_character;
-            layout(location = 1) out vec4 o_primaryColor;
-            layout(location = 2) out vec4 o_secondaryColor;
-            layout(location = 3) out vec4 o_rotation;
-            layout(location = 4) out vec4 o_transform;
+            const maxAttachments = gl.getParameter(gl.MAX_COLOR_ATTACHMENTS);
+            const maxDrawBuffers = gl.getParameter(gl.MAX_DRAW_BUFFERS);
+            console.log(`WebGL 2 Capabilities - Max Attachments: ${maxAttachments}, Max Draw Buffers: ${maxDrawBuffers}`);
             
-            float random(vec2 st) { return fract(sin(dot(st, vec2(12.9898,78.233))) * 43758.5453123); }
-            bool insideBoxPixel(vec2 point, vec4 rect) { return all(greaterThanEqual(point, rect.xy)) && all(lessThan(point, rect.xy + rect.zw)); }
-            vec2 getShift(ivec2 coord) {
-                vec4 shiftColor = texture(u_shiftMap, (vec2(coord) + 0.5f) / u_gridSize);
-                return floor(shiftColor.xy * 2.0 - 1.0 + 0.5);
+            if (maxAttachments < 5 || maxDrawBuffers < 5) {
+                setError(`Device limited WebGL capabilities (Attachments: ${maxAttachments}). 5 required.`);
+                return;
             }
 
-            void main() {
-                ivec2 p = ivec2(gl_FragCoord.xy);
-                vec2 res = u_gridSize;
-                ivec2 sourceCoord = p + ivec2(getShift(p));
+            // Handle Resize
+            const handleResize = () => {
+                // On mobile, we avoid reloads to prevent loops from browser UI changes
+                const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0);
+                if (isMobileDevice) return;
+                location.reload();
+            };
 
-                vec4 rects[5] = vec4[](u_rect0, u_rect1, u_rect2, u_rect3, u_rect4);
-                int effects[5] = int[](u_effect0, u_effect1, u_effect2, u_effect3, u_effect4);
-                bool inversions[5] = bool[](u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4);
+            try {
+                setStatus("Configuring simulation...");
+                // ==========================================================
+                // GLOBAL CONFIGURATION
+                // ==========================================================
+                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0);
+                console.log("Device is mobile:", isMobile);
 
-                int zoneIndex = -1;
-                for(int i = 0; i < 5; i++) { if(insideBoxPixel(gl_FragCoord.xy, rects[i])) { zoneIndex = i; break; } }
-                
-                if (zoneIndex != -1) {
-                    int eff = effects[zoneIndex];
-                    if (eff == 3) { // Shuffle
-                         vec2 rOff = vec2(floor(random(gl_FragCoord.xy+u_frameCount)*7.0-3.0), floor(random(gl_FragCoord.xy-u_frameCount)*7.0-3.0));
-                         sourceCoord = p + ivec2(rOff);
-                    } else if (eff == 19) { // Flicker Step
-                        if (random(gl_FragCoord.xy + u_frameCount) > 0.99) {
-                            vec2 rPos = rects[zoneIndex].xy + (vec2(random(gl_FragCoord.xy), random(gl_FragCoord.xy-u_frameCount)))*rects[zoneIndex].zw;
-                            sourceCoord = ivec2(rPos);
-                        }
-                    } else if (eff == 20) { // Drunk Walk
-                        vec2 rStep = vec2(floor(random(gl_FragCoord.xy+u_frameCount)*3.0-1.0), floor(random(gl_FragCoord.xy-u_frameCount)*3.0-1.0));
-                        sourceCoord = p - ivec2(rStep);
-                    } else if (eff == 21) { // Pixel Sort
-                        vec3 mc = texture(u_previousPrimaryColor, (vec2(p)+0.5)/res).rgb;
-                        vec3 ac = texture(u_previousPrimaryColor, (vec2(p) + vec2(0.0, 1.0) + 0.5) / res).rgb;
-                        float mb = dot(mc, vec3(0.299, 0.587, 0.114));
-                        float ab = dot(ac, vec3(0.299, 0.587, 0.114));
-                        bool cond = inversions[zoneIndex] ? (ab < mb) : (ab > mb);
-                        if (cond) sourceCoord = p + ivec2(0, 1); 
-                        else sourceCoord = p;
-                    } else if (eff == 29) { // Slit-Scan
-                        float centerCol = rects[zoneIndex].x + rects[zoneIndex].z * 0.5;
-                        float y_off = (gl_FragCoord.x - centerCol) * 0.05;
-                        sourceCoord = ivec2(centerCol, p.y + int(y_off));
-                    } else if (eff == 30) { // Recursive Feedback
-                        vec2 center = rects[zoneIndex].xy + rects[zoneIndex].zw * 0.5;
-                        vec2 fromC = gl_FragCoord.xy - center;
-                        float angle = 0.03;
-                        float scale = inversions[zoneIndex] ? 1.01 : 0.99;
-                        mat2 rotM = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-                        sourceCoord = ivec2(center + rotM * fromC * scale);
+                const CONFIG = {
+                    simulation: {
+                        numZones: 5,
+                        splitDepth: 1,
+                        effectChangeMin: 1000,
+                        effectChangeMax: 4000,
+                        fontSize: 1, // 1x1 pixels for all devices
+                        frameRate: 60
+                    },
+                    movement: {
+                        zoneSpeedMax: 5.0,
+                        easing: 0.08,
+                        stutterChance: 0.05,
+                        stutterMagnitude: 30.0
+                    },
+                    effects: {
+                        rainSpeed: -2.0,
+                        glitchMagnitude: 30.0,
+                        explodeMagnitude: 4.0,
+                        turbulenceMag: 5.0,
+                        shearMagnitude: 15.0,
+                        twistMagnitude: 0.1,
+                        jitterMagnitude: 4.0,
+                        vortexMagnitude: 2.0,
+                        waveMagnitude: 4.0,
+                        waveFrequency: 0.1,
+                        twirlIntensity: 0.2,
+                        liquifyMagnitude: 3.0,
+                        barrelPower: 1.5,
+                        feedbackMagnitude: 0.02,
+                        feedbackScale: 0.01
                     }
-                }
-                
-                vec2 sourceUV = (vec2(sourceCoord) + 0.5) / res;
-                vec4 pc = texture(u_previousPrimaryColor, sourceUV);
-                
-                o_character = vec4(219.0/255.0, 0.0, 0.0, 1.0);
-                o_primaryColor = pc; 
-                o_secondaryColor = pc;
-                o_rotation = vec4(0,0,0,1); o_transform = vec4(0,0,0,1);
-            }`;
-            
-            const PostProcessShader = `#version 300 es
-            precision highp float;
-            in vec2 v_uv;
-            uniform sampler2D u_primaryColorIn;
-            uniform vec2 u_resolution;
-
-            layout(location = 0) out vec4 o_character;
-            layout(location = 1) out vec4 o_primaryColor;
-            layout(location = 2) out vec4 o_secondaryColor;
-            layout(location = 3) out vec4 o_rotation;
-            layout(location = 4) out vec4 o_transform;
-            
-            void main() {
-                vec2 uv = v_uv;
-                vec3 rawColor = texture(u_primaryColorIn, uv).rgb;
-                
-                // Pure passthrough with enforced solid block
-                o_character = vec4(219.0/255.0, 0.0, 0.0, 1.0);
-                o_primaryColor = vec4(rawColor, 1.0);
-                o_secondaryColor = vec4(rawColor, 1.0); 
-                o_rotation = vec4(0.0, 0.0, 0.0, 1.0);
-                o_transform = vec4(0.0, 0.0, 0.0, 1.0);
-            }
-            `;
-
-            // === SIMULATION LOGIC ===
-
-            const t = textmode.create({
-                width: window.innerWidth,
-                height: window.innerHeight,
-                fontSize: 1, 
-                frameRate: 60
-            });
-
-            const noiseShader = t.createFilterShader(InitialPixelShader);
-            const shiftShader = t.createFilterShader(PixelDisplacementShader);
-            const pushShader = t.createFilterShader(PixelUpdateShader);
-            const postProcessShader = t.createFilterShader(PostProcessShader);
-
-            let shiftFramebuffer, prevPushFramebuffer, nextPushFramebuffer, rectangleManager;
-            
-            let layer1Effects = [];
-            const TOTAL_ZONE_EFFECTS = 31; 
-
-            function assignRandomEffects() {
-                layer1Effects = [];
-                const now = performance.now();
-                for (let i = 0; i < 5; i++) {
-                    layer1Effects.push({
-                        id: Math.floor(Math.random() * TOTAL_ZONE_EFFECTS),
-                        inverted: Math.random() < 0.5,
-                        lastResetTime: now,
-                        nextResetInterval: (1 + Math.random() * 3) * 1000
-                    });
-                }
-            }
-            
-            function resetSimulation() {
-                const w = t.grid.cols;
-                const h = t.grid.rows;
-                const random1 = createSeededRandom(Date.now());
-                assignRandomEffects();
-
-                shiftFramebuffer = t.createFramebuffer({ width: w, height: h });
-                prevPushFramebuffer = t.createFramebuffer({ width: w, height: h });
-                nextPushFramebuffer = t.createFramebuffer({ width: w, height: h });
-                rectangleManager = new RectangleManager(w, h, 3, 0, 5, random1);
-                rectangleManager.initializeRectangles();
-
-                [prevPushFramebuffer, nextPushFramebuffer].forEach(fb => {
-                    fb.begin();
-                    t.shader(noiseShader);
-                    t.setUniform('u_frameCount', 0);
-                    t.setUniform('u_gridSize', [w, h]);
-                    t.rect(0, 0, w, h);
-                    fb.end();
-                });
-            }
-
-            t.setup(() => {
-                resetSimulation();
-
-                let cursorHideTimer;
-                function hideCursor() { document.body.classList.add('hide-cursor'); }
-                function resetCursorTimer() {
-                    document.body.classList.remove('hide-cursor');
-                    clearTimeout(cursorHideTimer);
-                    cursorHideTimer = setTimeout(hideCursor, 3000);
-                }
-                window.addEventListener('mousemove', resetCursorTimer);
-                resetCursorTimer();
-            });
-
-            t.draw(() => {
-                const currentTime = performance.now();
-                const w = t.grid.cols;
-                const h = t.grid.rows;
-                
-                layer1Effects.forEach((effect) => {
-                    if (currentTime - effect.lastResetTime > effect.nextResetInterval) {
-                        effect.id = Math.floor(Math.random() * TOTAL_ZONE_EFFECTS);
-                        effect.inverted = Math.random() < 0.5;
-                        effect.lastResetTime = currentTime;
-                        effect.nextResetInterval = (1 + Math.random() * 3) * 1000;
-                    }
-                });
-                
-                rectangleManager.update();
-                [prevPushFramebuffer, nextPushFramebuffer] = [nextPushFramebuffer, prevPushFramebuffer];
-                
-                shiftFramebuffer.begin();
-                t.shader(shiftShader);
-                t.setUniform('u_frameCount', t.frameCount);
-                t.setUniform('u_gridSize', [w, h]);
-                t.setUniform('u_previousPrimaryColor', prevPushFramebuffer.textures[1]);
-                rectangleManager.rectangles.forEach((rect, i) => t.setUniform(`u_rect${i}`, [rect.x, rect.y, rect.width, rect.height]));
-                layer1Effects.forEach((effect, i) => {
-                    t.setUniform(`u_effect${i}`, effect.id);
-                    t.setUniform(`u_inverted${i}`, effect.inverted);
-                });
-                t.rect(0, 0, w, h);
-                shiftFramebuffer.end();
-
-                nextPushFramebuffer.begin();
-                t.shader(pushShader);
-                t.setUniform('u_frameCount', t.frameCount);
-                t.setUniform('u_gridSize', [w, h]);
-                 rectangleManager.rectangles.forEach((rect, i) => t.setUniform(`u_rect${i}`, [rect.x, rect.y, rect.width, rect.height]));
-                 layer1Effects.forEach((effect, i) => {
-                    t.setUniform(`u_effect${i}`, effect.id);
-                    t.setUniform(`u_inverted${i}`, effect.inverted);
-                });
-                t.setUniform('u_shiftMap', shiftFramebuffer.textures[0]);
-                t.setUniform('u_previousCharacter', prevPushFramebuffer.textures[0]);
-                t.setUniform('u_previousPrimaryColor', prevPushFramebuffer.textures[1]);
-                t.setUniform('u_previousSecondaryColor', prevPushFramebuffer.textures[2]);
-                t.rect(0, 0, w, h);
-                nextPushFramebuffer.end();
-
-                t.shader(postProcessShader);
-                t.setUniform('u_primaryColorIn', nextPushFramebuffer.textures[1]);
-                t.setUniform('u_resolution', [w, h]);
-                t.rect(0, 0, w, h);
-            });
-
-            function createSeededRandom(seed) {
-                let state = seed;
-                return function() {
-                    state = (state * 1664525 + 1013904223) % 4294967296;
-                    return state / 4294967296;
                 };
-            }
 
-            class RectangleManager {
-                constructor(gridCols, gridRows, splitDepth = 3, spacing = 1, maxRectangleCount = 5, randomFunc = Math.random) {
-                    this.gridCols = gridCols; this.gridRows = gridRows; this.maxRectangleCount = maxRectangleCount;
-                    this.splitDepth = splitDepth; this.spacing = Math.max(0, Math.floor(spacing)); this.rectangles = []; this.random = randomFunc;
+                // === GLSL SHADER DEFINITIONS ===
+                // Using mediump for better mobile compatibility
+                const InitialPixelShader = `#version 300 es
+precision mediump float;
+precision mediump int;
+uniform vec2 u_gridSize;
+layout(location = 0) out vec4 o_char;
+layout(location = 1) out vec4 o_prim;
+layout(location = 2) out vec4 o_sec;
+layout(location = 3) out vec4 o_rot;
+layout(location = 4) out vec4 o_trans;
+
+void main() {
+    vec2 uv = gl_FragCoord.xy / u_gridSize;
+    float val = (uv.x < 0.5) ? 1.0 : 0.0;
+    o_char = vec4(219.0/255.0, 0.0, 0.0, 1.0);
+    o_prim = vec4(vec3(val), 1.0);
+    o_sec = vec4(vec3(val), 1.0); 
+    o_rot = vec4(0.0, 0.0, 0.0, 1.0);
+    o_trans = vec4(0.0, 0.0, 0.0, 1.0);
+}`.trim();
+
+                const PixelDisplacementShader = `#version 300 es
+precision mediump float;
+precision mediump int;
+in vec2 v_uv;
+uniform mediump float u_frameCount;
+uniform mediump vec2 u_gridSize;
+uniform mediump vec4 u_rect0, u_rect1, u_rect2, u_rect3, u_rect4;
+uniform mediump int u_effect0, u_effect1, u_effect2, u_effect3, u_effect4;
+uniform bool u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4;
+uniform sampler2D u_previousPrimaryColor;
+
+layout(location = 0) out vec4 o_char;
+layout(location = 1) out vec4 o_prim;
+layout(location = 2) out vec4 o_sec;
+layout(location = 3) out vec4 o_rot;
+layout(location = 4) out vec4 o_trans;
+
+float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
+float noise(vec2 st) {
+    vec2 i = floor(st); vec2 f = fract(st); vec2 u = f*f*(3.0-2.0*f);
+    return mix(mix(random(i), random(i + vec2(1.0, 0.0)), u.x),
+               mix(random(i + vec2(0.0, 1.0)), random(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+bool insideBox(vec2 point, vec2 bottomLeft, vec2 topRight) { return all(greaterThanEqual(point, bottomLeft)) && all(lessThan(point, topRight)); }
+
+void main() {
+    vec2 res = u_gridSize;
+    float time = u_frameCount * 0.01;
+    vec2 texel = 1.0f / res;
+    vec2 offset = vec2(0.0f);
+    mediump vec4 rects[5];
+    rects[0] = u_rect0; rects[1] = u_rect1; rects[2] = u_rect2; rects[3] = u_rect3; rects[4] = u_rect4;
+    mediump int effects[5];
+    effects[0] = u_effect0; effects[1] = u_effect1; effects[2] = u_effect2; effects[3] = u_effect3; effects[4] = u_effect4;
+    bool inversions[5];
+    inversions[0] = u_inverted0; inversions[1] = u_inverted1; inversions[2] = u_inverted2; inversions[3] = u_inverted3; inversions[4] = u_inverted4;
+
+    int zoneIndex = -1;
+    for(int i = 0; i < 5; i++) {
+        vec2 bl = rects[i].xy / res;
+        vec2 tr = (rects[i].xy + rects[i].zw) / res;
+        if (insideBox(v_uv, bl, tr)) { zoneIndex = i; break; }
+    }
+    
+    if (zoneIndex != -1) {
+        int eff = effects[zoneIndex];
+        vec2 center = rects[zoneIndex].xy + rects[zoneIndex].zw * 0.5;
+        float radius = length(rects[zoneIndex].zw * 0.5);
+        vec2 rel = (gl_FragCoord.xy - rects[zoneIndex].xy) / rects[zoneIndex].zw;
+
+        if (eff == 0) offset.y = ${CONFIG.effects.rainSpeed.toFixed(2)} * texel.y;
+        else if (eff == 1) { if (mod(u_frameCount, 30.0) < 5.0) offset.x = floor(random(vec2(floor(time)))*${CONFIG.effects.glitchMagnitude.toFixed(2)}-(${CONFIG.effects.glitchMagnitude.toFixed(2)}*0.5)) * texel.x; }
+        else if (eff == 2) { vec2 toC = gl_FragCoord.xy - center; if(radius>0.0) offset = normalize(toC) * texel * ${CONFIG.effects.explodeMagnitude.toFixed(2)}; }
+        else if (eff == 3) { vec2 nCoord = v_uv * 10.0 + time; offset = vec2(noise(nCoord)-0.5, noise(nCoord+15.0)-0.5)*texel*${CONFIG.effects.turbulenceMag.toFixed(2)}; }
+        else if (eff == 4) offset.x = (rel.y - 0.5) * ${CONFIG.effects.shearMagnitude.toFixed(2)} * texel.x;
+        else if (eff == 5) { vec2 d = gl_FragCoord.xy-center; offset = vec2(-d.y, d.x)*texel*${CONFIG.effects.twistMagnitude.toFixed(3)}; }
+        else if (eff == 6) { if (mod(floor(gl_FragCoord.y), 3.0) == 0.0) offset.x = 4.0 * texel.x; }
+        else if (eff == 7) offset = vec2(random(v_uv+time)-0.5, random(v_uv-time)-0.5)*${CONFIG.effects.jitterMagnitude.toFixed(2)}*texel;
+        else if (eff == 8) { 
+            vec3 mc = texture(u_previousPrimaryColor, v_uv).rgb;
+            offset.x = (mc.r - 0.5) * 8.0 * texel.x;
+            offset.y = (mc.g - 0.5) * 8.0 * texel.y;
+        }
+        else if (eff == 9) { 
+            vec2 toC = center - gl_FragCoord.xy; vec2 perp = vec2(-toC.y, toC.x);
+            if(length(toC) > 0.0) offset = normalize(toC * 0.4 + perp) * texel * ${CONFIG.effects.vortexMagnitude.toFixed(2)};
+        }
+        else if (eff == 10) offset.y = sin(gl_FragCoord.x * ${CONFIG.effects.waveFrequency.toFixed(2)} + time * 5.0) * ${CONFIG.effects.waveMagnitude.toFixed(2)} * texel.y;
+        else if (eff == 11) { 
+            vec2 fromC = gl_FragCoord.xy - center; float dist = length(fromC);
+            float angle = ${CONFIG.effects.twirlIntensity.toFixed(2)} * (radius - dist) / radius;
+            mat2 R = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+            if(dist < radius) offset = (R * fromC - fromC) * 5.0 * texel;
+        }
+        else if (eff == 12) { 
+            float angle = noise(v_uv * 12.0 + time) * 6.28;
+            offset = vec2(cos(angle), sin(angle)) * ${CONFIG.effects.liquifyMagnitude.toFixed(2)} * texel;
+        }
+        else if (eff == 13) { 
+            vec2 fromC = (gl_FragCoord.xy - center) / rects[zoneIndex].zw;
+            float r2 = dot(fromC, fromC);
+            vec2 newP = center + fromC * (1.0 + ${CONFIG.effects.barrelPower.toFixed(2)} * r2) * rects[zoneIndex].zw;
+            offset = (newP - gl_FragCoord.xy) * 0.2 * texel;
+        }
+        else if (eff == 14) { 
+            vec2 fromC = gl_FragCoord.xy - center;
+            offset = (fromC * ${CONFIG.effects.feedbackMagnitude.toFixed(3)}) * texel;
+        }
+
+        if (inversions[zoneIndex]) offset *= -1.0;
+    }
+
+    vec2 offPix = floor(offset * res + 0.5f);
+    offPix = clamp(offPix, -1.0f, 1.0f);
+    vec4 resCol = vec4((offPix.x + 1.0f) * 0.5f, (offPix.y + 1.0f) * 0.5f, 0.0f, 1.0f);
+    o_char = resCol; o_prim = resCol; o_sec = resCol; o_rot = resCol; o_trans = resCol;
+}`.trim();
+
+                const PixelUpdateShader = `#version 300 es
+precision mediump float;
+precision mediump int;
+uniform sampler2D u_shiftMap;
+uniform sampler2D u_previousPrimaryColor;
+uniform mediump vec2 u_gridSize;
+uniform mediump float u_frameCount;
+uniform mediump vec4 u_rect0, u_rect1, u_rect2, u_rect3, u_rect4;
+uniform mediump int u_effect0, u_effect1, u_effect2, u_effect3, u_effect4;
+uniform bool u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4;
+
+layout(location = 0) out vec4 o_char;
+layout(location = 1) out vec4 o_prim;
+layout(location = 2) out vec4 o_sec;
+layout(location = 3) out vec4 o_rot;
+layout(location = 4) out vec4 o_trans;
+
+bool insideBoxPixel(vec2 point, vec4 rect) { return all(greaterThanEqual(point, rect.xy)) && all(lessThan(point, rect.xy + rect.zw)); }
+vec2 getShift(ivec2 coord) {
+    vec4 shiftColor = texture(u_shiftMap, (vec2(coord) + 0.5f) / u_gridSize);
+    return floor(shiftColor.xy * 2.0 - 1.0 + 0.5);
+}
+
+void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    vec2 res = u_gridSize;
+    ivec2 sourceCoord = p + ivec2(getShift(p));
+
+    mediump vec4 rects[5];
+    rects[0] = u_rect0; rects[1] = u_rect1; rects[2] = u_rect2; rects[3] = u_rect3; rects[4] = u_rect4;
+    mediump int effects[5];
+    effects[0] = u_effect0; effects[1] = u_effect1; effects[2] = u_effect2; effects[3] = u_effect3; effects[4] = u_effect4;
+    bool inversions[5];
+    inversions[0] = u_inverted0; inversions[1] = u_inverted1; inversions[2] = u_inverted2; inversions[3] = u_inverted3; inversions[4] = u_inverted4;
+
+    int zoneIndex = -1;
+    for(int i = 0; i < 5; i++) { if(insideBoxPixel(gl_FragCoord.xy, rects[i])) { zoneIndex = i; break; } }
+    
+    if (zoneIndex != -1) {
+        int eff = effects[zoneIndex];
+        if (eff == 14) { 
+             vec2 center = rects[zoneIndex].xy + rects[zoneIndex].zw * 0.5;
+             vec2 fromC = gl_FragCoord.xy - center;
+             float scale = inversions[zoneIndex] ? (1.0 + ${CONFIG.effects.feedbackScale.toFixed(3)}) : (1.0 - ${CONFIG.effects.feedbackScale.toFixed(3)});
+             sourceCoord = ivec2(center + fromC * scale);
+        }
+    }
+    
+    vec2 sourceUV = (vec2(sourceCoord) + 0.5) / res;
+    vec4 pc = texture(u_previousPrimaryColor, sourceUV);
+    
+    o_char = vec4(219.0/255.0, 0.0, 0.0, 1.0);
+    o_prim = pc; 
+    o_sec = pc; 
+    o_rot = vec4(0.0, 0.0, 0.0, 1.0);
+    o_trans = vec4(0.0, 0.0, 0.0, 1.0);
+}`.trim();
+    
+                const PostProcessShader = `#version 300 es
+precision mediump float;
+precision mediump int;
+in vec2 v_uv;
+uniform sampler2D u_primaryColorIn;
+layout(location = 0) out vec4 o_char;
+layout(location = 1) out vec4 o_prim;
+layout(location = 2) out vec4 o_sec;
+layout(location = 3) out vec4 o_rot;
+layout(location = 4) out vec4 o_trans;
+
+void main() {
+    vec4 raw = texture(u_primaryColorIn, v_uv);
+    o_char = vec4(219.0/255.0, 0.0, 0.0, 1.0);
+    o_prim = raw;
+    o_sec = raw; 
+    o_rot = vec4(0.0, 0.0, 0.0, 1.0);
+    o_trans = vec4(0.0, 0.0, 0.0, 1.0);
+}
+`.trim();
+
+                function createSeededRandom(seed) {
+                    let state = seed;
+                    return function() {
+                        state = (state * 1664525 + 1013904223) % 4294967296;
+                        return state / 4294967296;
+                    };
                 }
-                initializeRectangles() {
-                    this.rectangles = [];
-                    const container = { x: 0, y: 0, width: Math.floor(this.gridCols), height: Math.floor(this.gridRows) };
-                    this.splitSpace(container, 0);
-                    if (this.rectangles.length > this.maxRectangleCount) this.rectangles.length = this.maxRectangleCount;
-                    while (this.rectangles.length < this.maxRectangleCount) this.rectangles.push({ x: 0, y: 0, width: 0, height: 0, vx: 0, vy: 0, targetVx: 0, targetVy: 0 });
-                }
-                splitSpace(container, depth) {
-                    if (depth >= this.splitDepth || this.rectangles.length >= this.maxRectangleCount) {
-                        const vx = (this.random() - 0.5) * 5.0;
-                        const vy = (this.random() - 0.5) * 5.0;
-                        this.rectangles.push({ ...container, vx, vy, targetVx: vx, targetVy: vy });
-                        return;
+
+                class RectangleManager {
+                    constructor(gridCols, gridRows, splitDepth, spacing, maxRectangleCount, randomFunc) {
+                        this.gridCols = gridCols;
+                        this.gridRows = gridRows;
+                        this.maxRectangleCount = maxRectangleCount;
+                        this.splitDepth = splitDepth;
+                        this.spacing = Math.max(0, Math.floor(spacing));
+                        this.rectangles = [];
+                        this.random = randomFunc;
                     }
-                    const horiz = this.random() > 0.5;
-                    if (horiz) {
-                        if (container.height < this.spacing + 2) { this.rectangles.push({ ...container, vx: 0, vy: 0, targetVx: 0, targetVy: 0 }); return; }
-                        const sp = this.randomInt(1, container.height - this.spacing - 1);
-                        this.splitSpace({ x: container.x, y: container.y, width: container.width, height: sp }, depth + 1);
-                        this.splitSpace({ x: container.x, y: container.y + sp + this.spacing, width: container.width, height: container.height - sp - this.spacing }, depth + 1);
-                    } else {
-                        if (container.width < this.spacing + 2) { this.rectangles.push({ ...container, vx: 0, vy: 0, targetVx: 0, targetVy: 0 }); return; }
-                        const sp = this.randomInt(1, container.width - this.spacing - 1);
-                        this.splitSpace({ x: container.x, y: container.y, width: sp, height: container.height }, depth + 1);
-                        this.splitSpace({ x: container.x + sp + this.spacing, y: container.y, width: container.width - sp - this.spacing, height: container.height }, depth + 1);
-                    }
-                }
-                update() {
-                    this.rectangles.forEach(rect => {
-                        if (rect.width === 0) return;
-                        if (this.random() < 0.05) {
-                            rect.x += (this.random() - 0.5) * 30.0;
-                            rect.y += (this.random() - 0.5) * 30.0;
-                            rect.targetVx = (this.random() - 0.5) * 10.0;
-                            rect.targetVy = (this.random() - 0.5) * 10.0;
+
+                    initializeRectangles() {
+                        this.rectangles = [];
+                        const container = { x: 0, y: 0, width: Math.floor(this.gridCols), height: Math.floor(this.gridRows) };
+                        this.splitSpace(container, 0);
+                        if (this.rectangles.length > this.maxRectangleCount) this.rectangles.length = this.maxRectangleCount;
+                        while (this.rectangles.length < this.maxRectangleCount) {
+                            this.rectangles.push({ x: 0, y: 0, width: 0, height: 0, vx: 0, vy: 0, targetVx: 0, targetVy: 0 });
                         }
-                        rect.vx += (rect.targetVx - rect.vx) * 0.08;
-                        rect.vy += (rect.targetVy - rect.vy) * 0.08;
-                        rect.x += rect.vx; rect.y += rect.vy;
-                        if (rect.x <= 0 || rect.x + rect.width >= this.gridCols) { rect.vx *= -1; rect.targetVx *= -1; }
-                        if (rect.y <= 0 || rect.y + rect.height >= this.gridRows) { rect.vy *= -1; rect.targetVy *= -1; }
-                        rect.x = Math.max(0, Math.min(rect.x, this.gridCols - rect.width));
-                        rect.y = Math.max(0, Math.min(rect.y, this.gridRows - rect.height));
+                    }
+
+                    splitSpace(container, depth) {
+                        if (depth >= this.splitDepth || this.rectangles.length >= this.maxRectangleCount) {
+                            const vx = (this.random() - 0.5) * CONFIG.movement.zoneSpeedMax;
+                            const vy = (this.random() - 0.5) * CONFIG.movement.zoneSpeedMax;
+                            this.rectangles.push({ ...container, vx, vy, targetVx: vx, targetVy: vy });
+                            return;
+                        }
+                        const horiz = this.random() > 0.5;
+                        if (horiz) {
+                            if (container.height < this.spacing + 2) {
+                                this.rectangles.push({ ...container, vx: 0, vy: 0, targetVx: 0, targetVy: 0 });
+                                return;
+                            }
+                            const sp = this.randomInt(1, container.height - this.spacing - 1);
+                            this.splitSpace({ x: container.x, y: container.y, width: container.width, height: sp }, depth + 1);
+                            this.splitSpace({ x: container.x, y: container.y + sp + this.spacing, width: container.width, height: container.height - sp - this.spacing }, depth + 1);
+                        } else {
+                            if (container.width < this.spacing + 2) {
+                                this.rectangles.push({ ...container, vx: 0, vy: 0, targetVx: 0, targetVy: 0 });
+                                return;
+                            }
+                            const sp = this.randomInt(1, container.width - this.spacing - 1);
+                            this.splitSpace({ x: container.x, y: container.y, width: sp, height: container.height }, depth + 1);
+                            this.splitSpace({ x: container.x + sp + this.spacing, y: container.y, width: container.width - sp - this.spacing, height: container.height }, depth + 1);
+                        }
+                    }
+
+                    update() {
+                        this.rectangles.forEach(rect => {
+                            if (rect.width === 0) return;
+                            if (this.random() < CONFIG.movement.stutterChance) {
+                                rect.x += (this.random() - 0.5) * CONFIG.movement.stutterMagnitude;
+                                rect.y += (this.random() - 0.5) * CONFIG.movement.stutterMagnitude;
+                                rect.targetVx = (this.random() - 0.5) * CONFIG.movement.zoneSpeedMax * 2.0;
+                                rect.targetVy = (this.random() - 0.5) * CONFIG.movement.zoneSpeedMax * 2.0;
+                            }
+                            rect.vx += (rect.targetVx - rect.vx) * CONFIG.movement.easing;
+                            rect.vy += (rect.targetVy - rect.vy) * CONFIG.movement.easing;
+                            rect.x += rect.vx;
+                            rect.y += rect.vy;
+                            if (rect.x <= 0 || rect.x + rect.width >= this.gridCols) {
+                                rect.vx *= -1;
+                                rect.targetVx *= -1;
+                            }
+                            if (rect.y <= 0 || rect.y + rect.height >= this.gridRows) {
+                                rect.vy *= -1;
+                                rect.targetVy *= -1;
+                            }
+                            rect.x = Math.max(0, Math.min(rect.x, this.gridCols - rect.width));
+                            rect.y = Math.max(0, Math.min(rect.y, this.gridRows - rect.height));
+                        });
+                    }
+
+                    randomInt(min, max) {
+                        return Math.floor(this.random() * (max - min + 1)) + min;
+                    }
+                }
+
+                setStatus("Initializing textmode engine...");
+                // Initialize textmode
+                const t = textmode.create({
+                    el: container,
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    fontSize: CONFIG.simulation.fontSize,
+                    frameRate: CONFIG.simulation.frameRate
+                });
+
+                // Ensure canvas is attached
+                if (t.canvas && container && !container.contains(t.canvas)) {
+                    console.log("Appending textmode canvas manually");
+                    container.appendChild(t.canvas);
+                }
+
+                setStatus("Compiling shaders...");
+                const noiseShader = t.createFilterShader(InitialPixelShader);
+                const shiftShader = t.createFilterShader(PixelDisplacementShader);
+                const pushShader = t.createFilterShader(PixelUpdateShader);
+                const postProcessShader = t.createFilterShader(PostProcessShader);
+
+                let shiftFramebuffer, prevPushFramebuffer, nextPushFramebuffer, rectangleManager;
+                let layer1Effects = [];
+                const TOTAL_ZONE_EFFECTS = 15;
+
+                function assignRandomEffects() {
+                    layer1Effects = [];
+                    const now = performance.now();
+                    for (let i = 0; i < CONFIG.simulation.numZones; i++) {
+                        const nextInt = CONFIG.simulation.effectChangeMin + Math.random() * (CONFIG.simulation.effectChangeMax - CONFIG.simulation.effectChangeMin);
+                        layer1Effects.push({
+                            id: Math.floor(Math.random() * TOTAL_ZONE_EFFECTS),
+                            inverted: Math.random() < 0.5,
+                            lastResetTime: now,
+                            nextResetInterval: nextInt
+                        });
+                    }
+                }
+
+                function resetSimulation() {
+                    const w = t.grid.cols;
+                    const h = t.grid.rows;
+                    const random1 = createSeededRandom(Date.now());
+                    assignRandomEffects();
+
+                    shiftFramebuffer = t.createFramebuffer({ width: w, height: h });
+                    prevPushFramebuffer = t.createFramebuffer({ width: w, height: h });
+                    nextPushFramebuffer = t.createFramebuffer({ width: w, height: h });
+                    rectangleManager = new RectangleManager(w, h, CONFIG.simulation.splitDepth, 0, CONFIG.simulation.numZones, random1);
+                    rectangleManager.initializeRectangles();
+
+                    [prevPushFramebuffer, nextPushFramebuffer].forEach(fb => {
+                        fb.begin();
+                        t.shader(noiseShader);
+                        t.setUniform('u_gridSize', [w, h]);
+                        t.rect(0, 0, w, h);
+                        fb.end();
                     });
                 }
-                randomInt(min, max) { return Math.floor(this.random() * (max - min + 1)) + min; }
+
+                t.setup(() => {
+                    setStatus("Starting simulation...");
+                    resetSimulation();
+                    let cursorHideTimer;
+                    function hideCursor() { document.body.classList.add('hide-cursor'); }
+                    function resetCursorTimer() {
+                        document.body.classList.remove('hide-cursor');
+                        clearTimeout(cursorHideTimer);
+                        cursorHideTimer = setTimeout(hideCursor, 3000);
+                    }
+                    window.addEventListener('mousemove', resetCursorTimer);
+                    window.addEventListener('touchstart', resetCursorTimer);
+                    resetCursorTimer();
+                    
+                    // Hide status after success
+                    setTimeout(() => setStatus(''), 1000);
+                });
+
+                t.draw(() => {
+                    const currentTime = performance.now();
+                    const w = t.grid.cols;
+                    const h = t.grid.rows;
+
+                    layer1Effects.forEach((effect) => {
+                        if (currentTime - effect.lastResetTime > effect.nextResetInterval) {
+                            effect.id = Math.floor(Math.random() * TOTAL_ZONE_EFFECTS);
+                            effect.inverted = Math.random() < 0.5;
+                            effect.lastResetTime = currentTime;
+                            const nextInt = CONFIG.simulation.effectChangeMin + Math.random() * (CONFIG.simulation.effectChangeMin);
+                            effect.nextResetInterval = nextInt;
+                        }
+                    });
+
+                    rectangleManager.update();
+                    
+                    // Swap framebuffers
+                    const temp = prevPushFramebuffer;
+                    prevPushFramebuffer = nextPushFramebuffer;
+                    nextPushFramebuffer = temp;
+
+                    shiftFramebuffer.begin();
+                    t.shader(shiftShader);
+                    t.setUniform('u_frameCount', t.frameCount);
+                    t.setUniform('u_gridSize', [w, h]);
+                    t.setUniform('u_previousPrimaryColor', prevPushFramebuffer.textures[1]);
+                    rectangleManager.rectangles.forEach((rect, i) => t.setUniform(`u_rect${i}`, [rect.x, rect.y, rect.width, rect.height]));
+                    layer1Effects.forEach((effect, i) => {
+                        t.setUniform(`u_effect${i}`, effect.id);
+                        t.setUniform(`u_inverted${i}`, effect.inverted);
+                    });
+                    t.rect(0, 0, w, h);
+                    shiftFramebuffer.end();
+
+                    nextPushFramebuffer.begin();
+                    t.shader(pushShader);
+                    t.setUniform('u_frameCount', t.frameCount);
+                    t.setUniform('u_gridSize', [w, h]);
+                    t.setUniform('u_shiftMap', shiftFramebuffer.textures[0]);
+                    t.setUniform('u_previousPrimaryColor', prevPushFramebuffer.textures[1]);
+                    rectangleManager.rectangles.forEach((rect, i) => t.setUniform(`u_rect${i}`, [rect.x, rect.y, rect.width, rect.height]));
+                    layer1Effects.forEach((effect, i) => {
+                        t.setUniform(`u_effect${i}`, effect.id);
+                        t.setUniform(`u_inverted${i}`, effect.inverted);
+                    });
+                    t.rect(0, 0, w, h);
+                    nextPushFramebuffer.end();
+
+                    t.shader(postProcessShader);
+                    t.setUniform('u_primaryColorIn', nextPushFramebuffer.textures[1]);
+                    t.rect(0, 0, w, h);
+                });
+
+                window.addEventListener('resize', handleResize);
+
+            } catch (err) {
+                setError(err.message || "Unknown error during setup");
             }
         })();
     </script>
