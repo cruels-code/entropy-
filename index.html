@@ -524,7 +524,7 @@ void main() {
                 }
 
                 t.setup(() => {
-                    setStatus("Starting simulation...");
+                    setStatus('');
                     resetSimulation();
                     let cursorHideTimer;
                     function hideCursor() { document.body.classList.add('hide-cursor'); }
@@ -536,9 +536,6 @@ void main() {
                     window.addEventListener('mousemove', resetCursorTimer);
                     window.addEventListener('touchstart', resetCursorTimer);
                     resetCursorTimer();
-                    
-                    // Hide status after success
-                    setTimeout(() => setStatus(''), 1000);
                 });
 
                 t.draw(() => {
