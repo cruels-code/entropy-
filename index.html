@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>mono master</title>
+    <title>Entropy_Mono</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
         #simulation-container { width: 100%; height: 100%; position: relative; }
@@ -127,11 +127,20 @@
             }
 
             // Handle Resize
+            let resizeTimeout;
+            let lastWidth = window.innerWidth;
+            let lastHeight = window.innerHeight;
+
             const handleResize = () => {
-                // On mobile, we avoid reloads to prevent loops from browser UI changes
-                const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0);
-                if (isMobileDevice) return;
-                location.reload();
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    const newWidth = window.innerWidth;
+                    const newHeight = window.innerHeight;
+                    // Reload if size changed significantly (avoids mobile URL bar loops)
+                    if (Math.abs(newWidth - lastWidth) > 50 || Math.abs(newHeight - lastHeight) > 50) {
+                        location.reload();
+                    }
+                }, 200);
             };
 
             try {
@@ -144,8 +153,8 @@
 
                 const CONFIG = {
                     simulation: {
-                        numZones: 5,
-                        splitDepth: 2,
+                        numZones: 8,
+                        splitDepth: 3,
                         effectChangeMin: 1000,
                         effectChangeMax: 4000,
                         fontSize: 1, // 1x1 pixels for all devices
@@ -206,9 +215,9 @@ precision mediump int;
 in vec2 v_uv;
 uniform mediump float u_frameCount;
 uniform mediump vec2 u_gridSize;
-uniform mediump vec4 u_rect0, u_rect1, u_rect2, u_rect3, u_rect4;
-uniform mediump int u_effect0, u_effect1, u_effect2, u_effect3, u_effect4;
-uniform bool u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4;
+uniform mediump vec4 u_rect0, u_rect1, u_rect2, u_rect3, u_rect4, u_rect5, u_rect6, u_rect7;
+uniform mediump int u_effect0, u_effect1, u_effect2, u_effect3, u_effect4, u_effect5, u_effect6, u_effect7;
+uniform bool u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4, u_inverted5, u_inverted6, u_inverted7;
 uniform sampler2D u_previousPrimaryColor;
 
 layout(location = 0) out vec4 o_char;
@@ -230,19 +239,22 @@ void main() {
     float time = u_frameCount * 0.006;
     vec2 texel = 1.0f / res;
     vec2 offset = vec2(0.0f);
-    mediump vec4 rects[5];
-    rects[0] = u_rect0; rects[1] = u_rect1; rects[2] = u_rect2; rects[3] = u_rect3; rects[4] = u_rect4;
-    mediump int effects[5];
-    effects[0] = u_effect0; effects[1] = u_effect1; effects[2] = u_effect2; effects[3] = u_effect3; effects[4] = u_effect4;
-    bool inversions[5];
-    inversions[0] = u_inverted0; inversions[1] = u_inverted1; inversions[2] = u_inverted2; inversions[3] = u_inverted3; inversions[4] = u_inverted4;
+    mediump vec4 rects[8];
+    rects[0] = u_rect0; rects[1] = u_rect1; rects[2] = u_rect2; rects[3] = u_rect3; rects[4] = u_rect4; rects[5] = u_rect5; rects[6] = u_rect6; rects[7] = u_rect7;
+    mediump int effects[8];
+    effects[0] = u_effect0; effects[1] = u_effect1; effects[2] = u_effect2; effects[3] = u_effect3; effects[4] = u_effect4; effects[5] = u_effect5; effects[6] = u_effect6; effects[7] = u_effect7;
+    bool inversions[8];
+    inversions[0] = u_inverted0; inversions[1] = u_inverted1; inversions[2] = u_inverted2; inversions[3] = u_inverted3; inversions[4] = u_inverted4; inversions[5] = u_inverted5; inversions[6] = u_inverted6; inversions[7] = u_inverted7;
 
     int zoneIndex = -1;
-    for(int i = 0; i < 5; i++) {
-        vec2 bl = rects[i].xy / res;
-        vec2 tr = (rects[i].xy + rects[i].zw) / res;
-        if (insideBox(v_uv, bl, tr)) { zoneIndex = i; break; }
-    }
+    if (insideBox(v_uv, rects[0].xy / res, (rects[0].xy + rects[0].zw) / res)) zoneIndex = 0;
+    else if (insideBox(v_uv, rects[1].xy / res, (rects[1].xy + rects[1].zw) / res)) zoneIndex = 1;
+    else if (insideBox(v_uv, rects[2].xy / res, (rects[2].xy + rects[2].zw) / res)) zoneIndex = 2;
+    else if (insideBox(v_uv, rects[3].xy / res, (rects[3].xy + rects[3].zw) / res)) zoneIndex = 3;
+    else if (insideBox(v_uv, rects[4].xy / res, (rects[4].xy + rects[4].zw) / res)) zoneIndex = 4;
+    else if (insideBox(v_uv, rects[5].xy / res, (rects[5].xy + rects[5].zw) / res)) zoneIndex = 5;
+    else if (insideBox(v_uv, rects[6].xy / res, (rects[6].xy + rects[6].zw) / res)) zoneIndex = 6;
+    else if (insideBox(v_uv, rects[7].xy / res, (rects[7].xy + rects[7].zw) / res)) zoneIndex = 7;
     
     if (zoneIndex != -1) {
         int eff = effects[zoneIndex];
@@ -396,9 +408,9 @@ uniform sampler2D u_shiftMap;
 uniform sampler2D u_previousPrimaryColor;
 uniform mediump vec2 u_gridSize;
 uniform mediump float u_frameCount;
-uniform mediump vec4 u_rect0, u_rect1, u_rect2, u_rect3, u_rect4;
-uniform mediump int u_effect0, u_effect1, u_effect2, u_effect3, u_effect4;
-uniform bool u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4;
+uniform mediump vec4 u_rect0, u_rect1, u_rect2, u_rect3, u_rect4, u_rect5, u_rect6, u_rect7;
+uniform mediump int u_effect0, u_effect1, u_effect2, u_effect3, u_effect4, u_effect5, u_effect6, u_effect7;
+uniform bool u_inverted0, u_inverted1, u_inverted2, u_inverted3, u_inverted4, u_inverted5, u_inverted6, u_inverted7;
 
 layout(location = 0) out vec4 o_char;
 layout(location = 1) out vec4 o_prim;
@@ -419,15 +431,22 @@ void main() {
     vec2 res = u_gridSize;
     ivec2 sourceCoord = p + ivec2(getShift(p));
 
-    mediump vec4 rects[5];
-    rects[0] = u_rect0; rects[1] = u_rect1; rects[2] = u_rect2; rects[3] = u_rect3; rects[4] = u_rect4;
-    mediump int effects[5];
-    effects[0] = u_effect0; effects[1] = u_effect1; effects[2] = u_effect2; effects[3] = u_effect3; effects[4] = u_effect4;
-    bool inversions[5];
-    inversions[0] = u_inverted0; inversions[1] = u_inverted1; inversions[2] = u_inverted2; inversions[3] = u_inverted3; inversions[4] = u_inverted4;
+    mediump vec4 rects[8];
+    rects[0] = u_rect0; rects[1] = u_rect1; rects[2] = u_rect2; rects[3] = u_rect3; rects[4] = u_rect4; rects[5] = u_rect5; rects[6] = u_rect6; rects[7] = u_rect7;
+    mediump int effects[8];
+    effects[0] = u_effect0; effects[1] = u_effect1; effects[2] = u_effect2; effects[3] = u_effect3; effects[4] = u_effect4; effects[5] = u_effect5; effects[6] = u_effect6; effects[7] = u_effect7;
+    bool inversions[8];
+    inversions[0] = u_inverted0; inversions[1] = u_inverted1; inversions[2] = u_inverted2; inversions[3] = u_inverted3; inversions[4] = u_inverted4; inversions[5] = u_inverted5; inversions[6] = u_inverted6; inversions[7] = u_inverted7;
 
     int zoneIndex = -1;
-    for(int i = 0; i < 5; i++) { if(insideBoxPixel(gl_FragCoord.xy, rects[i])) { zoneIndex = i; break; } }
+    if (insideBoxPixel(gl_FragCoord.xy, rects[0])) zoneIndex = 0;
+    else if (insideBoxPixel(gl_FragCoord.xy, rects[1])) zoneIndex = 1;
+    else if (insideBoxPixel(gl_FragCoord.xy, rects[2])) zoneIndex = 2;
+    else if (insideBoxPixel(gl_FragCoord.xy, rects[3])) zoneIndex = 3;
+    else if (insideBoxPixel(gl_FragCoord.xy, rects[4])) zoneIndex = 4;
+    else if (insideBoxPixel(gl_FragCoord.xy, rects[5])) zoneIndex = 5;
+    else if (insideBoxPixel(gl_FragCoord.xy, rects[6])) zoneIndex = 6;
+    else if (insideBoxPixel(gl_FragCoord.xy, rects[7])) zoneIndex = 7;
     
     if (zoneIndex != -1) {
         int eff = effects[zoneIndex];
@@ -441,6 +460,29 @@ void main() {
     
     vec2 sourceUV = (vec2(sourceCoord) + 0.5) / res;
     vec4 pc = texture(u_previousPrimaryColor, sourceUV);
+
+    // --- THE INJECTION ---
+    // Inject strobing lines into the feedback loop
+    
+    // 1. Vertical White Injection
+    // Occurs periodically, moves across screen
+    float vTrigger = sin(u_frameCount * 0.02);
+    if (vTrigger > 0.90) {
+        float pos = mod(u_frameCount * 5.0, u_gridSize.x);
+        if (abs(gl_FragCoord.x - pos) < 2.0) {
+            pc = vec4(1.0);
+        }
+    }
+
+    // 2. Horizontal Black Injection
+    // Occurs periodically, moves across screen
+    float hTrigger = cos(u_frameCount * 0.03);
+    if (hTrigger > 0.90) {
+        float pos = mod(u_frameCount * 7.0, u_gridSize.y);
+        if (abs(gl_FragCoord.y - pos) < 2.0) {
+            pc = vec4(0.0, 0.0, 0.0, 1.0);
+        }
+    }
     
     o_char = vec4(219.0/255.0, 0.0, 0.0, 1.0);
     o_prim = pc; 
@@ -454,6 +496,9 @@ precision mediump float;
 precision mediump int;
 in vec2 v_uv;
 uniform sampler2D u_primaryColorIn;
+uniform mediump float u_frameCount;
+uniform mediump vec4 u_rect0, u_rect1, u_rect2, u_rect3, u_rect4, u_rect5, u_rect6, u_rect7;
+
 layout(location = 0) out vec4 o_char;
 layout(location = 1) out vec4 o_prim;
 layout(location = 2) out vec4 o_sec;
@@ -462,9 +507,8 @@ layout(location = 4) out vec4 o_trans;
 
 void main() {
     vec4 raw = texture(u_primaryColorIn, v_uv);
-    // Force Monochrome
     float gray = dot(raw.rgb, vec3(0.299, 0.587, 0.114));
-    vec4 mono = vec4(vec3(gray), 1.0);
+    vec4 mono = vec4(gray, gray, gray, 1.0);
     
     o_char = vec4(219.0/255.0, 0.0, 0.0, 1.0);
     o_prim = mono;
@@ -526,19 +570,19 @@ void main() {
                         }
                     }
 
-                    update() {
+                    update(dt = 1.0) {
                         this.rectangles.forEach(rect => {
                             if (rect.width === 0) return;
-                            if (this.random() < CONFIG.movement.stutterChance) {
+                            if (this.random() < CONFIG.movement.stutterChance * dt) {
                                 rect.x += (this.random() - 0.5) * CONFIG.movement.stutterMagnitude;
                                 rect.y += (this.random() - 0.5) * CONFIG.movement.stutterMagnitude;
                                 rect.targetVx = (this.random() - 0.5) * CONFIG.movement.zoneSpeedMax * 2.0;
                                 rect.targetVy = (this.random() - 0.5) * CONFIG.movement.zoneSpeedMax * 2.0;
                             }
-                            rect.vx += (rect.targetVx - rect.vx) * CONFIG.movement.easing;
-                            rect.vy += (rect.targetVy - rect.vy) * CONFIG.movement.easing;
-                            rect.x += rect.vx;
-                            rect.y += rect.vy;
+                            rect.vx += (rect.targetVx - rect.vx) * CONFIG.movement.easing * dt;
+                            rect.vy += (rect.targetVy - rect.vy) * CONFIG.movement.easing * dt;
+                            rect.x += rect.vx * dt;
+                            rect.y += rect.vy * dt;
                             if (rect.x <= 0 || rect.x + rect.width >= this.gridCols) {
                                 rect.vx *= -1;
                                 rect.targetVx *= -1;
@@ -654,8 +698,22 @@ void main() {
                     resetCursorTimer();
                 });
 
+                let lastTime = performance.now();
+                let virtualFrameCount = 0;
+                let lastRegenTime = performance.now();
+
                 t.draw(() => {
                     const currentTime = performance.now();
+                    const dt = Math.min(2.0, (currentTime - lastTime) / (1000 / 60)) * 0.2;
+                    lastTime = currentTime;
+                    virtualFrameCount += dt;
+
+                    // Regenerate filter cells every 7 seconds
+                    if (currentTime - lastRegenTime > 7000) {
+                        rectangleManager.initializeRectangles();
+                        lastRegenTime = currentTime;
+                    }
+
                     const w = t.grid.cols;
                     const h = t.grid.rows;
 
@@ -671,7 +729,7 @@ void main() {
                         }
                     });
 
-                    rectangleManager.update();
+                    rectangleManager.update(dt);
                     
                     // Swap framebuffers
                     const temp = prevPushFramebuffer;
@@ -680,7 +738,7 @@ void main() {
 
                     shiftFramebuffer.begin();
                     t.shader(shiftShader);
-                    t.setUniform('u_frameCount', t.frameCount);
+                    t.setUniform('u_frameCount', virtualFrameCount);
                     t.setUniform('u_gridSize', [w, h]);
                     t.setUniform('u_previousPrimaryColor', prevPushFramebuffer.textures[1]);
                     rectangleManager.rectangles.forEach((rect, i) => t.setUniform(`u_rect${i}`, [rect.x, rect.y, rect.width, rect.height]));
@@ -693,7 +751,7 @@ void main() {
 
                     nextPushFramebuffer.begin();
                     t.shader(pushShader);
-                    t.setUniform('u_frameCount', t.frameCount);
+                    t.setUniform('u_frameCount', virtualFrameCount);
                     t.setUniform('u_gridSize', [w, h]);
                     t.setUniform('u_shiftMap', shiftFramebuffer.textures[0]);
                     t.setUniform('u_previousPrimaryColor', prevPushFramebuffer.textures[1]);
@@ -707,6 +765,9 @@ void main() {
 
                     t.shader(postProcessShader);
                     t.setUniform('u_primaryColorIn', nextPushFramebuffer.textures[1]);
+                    t.setUniform('u_gridSize', [w, h]);
+                    t.setUniform('u_frameCount', virtualFrameCount);
+                    rectangleManager.rectangles.forEach((rect, i) => t.setUniform(`u_rect${i}`, [rect.x, rect.y, rect.width, rect.height]));
                     t.rect(0, 0, w, h);
                 });
 
