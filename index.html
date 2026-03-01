@@ -608,6 +608,8 @@
           html += "- ...and " + (CONFIG.activeEffects.length - 7) + " more<br>";
         }
 
+        html += "<br><span id=\"seedTimer\"></span>";
+
         overlay.innerHTML = html;
       }
 
@@ -1119,10 +1121,24 @@
 
       function draw() {
         if (seedQueue.length > 1) {
-          if (Date.now() - lastSeedChangeTime > SEED_DURATION) {
+          let timeElapsed = Date.now() - lastSeedChangeTime;
+          let timeLeft = Math.max(0, SEED_DURATION - timeElapsed);
+          let secondsLeft = Math.ceil(timeLeft / 1000);
+          
+          let timerSpan = document.getElementById("seedTimer");
+          if (timerSpan) {
+            timerSpan.innerHTML = `<b>NEXT SEED IN:</b> ${secondsLeft}s`;
+          }
+
+          if (timeElapsed > SEED_DURATION) {
             currentSeedIndex = (currentSeedIndex + 1) % seedQueue.length;
             lastSeedChangeTime = Date.now();
             resetAnimation = true;
+          }
+        } else {
+          let timerSpan = document.getElementById("seedTimer");
+          if (timerSpan) {
+            timerSpan.innerHTML = "";
           }
         }
 
