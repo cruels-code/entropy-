@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <title>Pixel Mosher - MASTER</title>
+    <title>MASTER</title>
     <style>
       /* Ensure the canvas fills the entire browser window without scrollbars */
       body,
@@ -55,18 +55,29 @@
   <body>
     <div id="infoOverlay"></div>
     <div id="seedModal" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(8px); padding: 24px 32px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 200; color: white; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; text-align: center; font-size: 10px;">
-      <p style="margin-top: 0; margin-bottom: 16px; font-weight: 600; letter-spacing: 0.5px; opacity: 0.9;">ENTER SEED</p>
-      <div style="position: relative; display: inline-block; margin-bottom: 20px;">
-        <input type="text" id="seedInput" style="width: 220px; padding: 10px 12px; background: rgba(0, 0, 0, 0.5); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; font-family: inherit; font-size: 10px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='rgba(255,255,255,0.5)'" onblur="this.style.borderColor='rgba(255,255,255,0.2)'" onmouseover="document.getElementById('seedTooltip').style.opacity='1'" onmouseout="document.getElementById('seedTooltip').style.opacity='0'" />
-        <div id="seedTooltip" style="position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 8px; width: 200px; padding: 8px; background: rgba(0,0,0,0.9); color: #fff; font-size: 9px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 201; line-height: 1.4; font-weight: normal; text-align: center;">
-          A seed number is a unique code that determines the exact colors, layout, and effects of the artwork. Paste a seed to recreate a specific design.
+      <div id="seedInputView">
+        <p style="margin-top: 0; margin-bottom: 16px; font-weight: 600; letter-spacing: 0.5px; opacity: 0.9;">ENTER SEED</p>
+        <div style="position: relative; display: inline-block; margin-bottom: 20px;">
+          <input type="text" id="seedInput" style="width: 220px; padding: 10px 12px; background: rgba(0, 0, 0, 0.5); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; font-family: inherit; font-size: 10px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='rgba(255,255,255,0.5)'" onblur="this.style.borderColor='rgba(255,255,255,0.2)'" onmouseover="document.getElementById('seedTooltip').style.opacity='1'" onmouseout="document.getElementById('seedTooltip').style.opacity='0'" />
+          <div id="seedTooltip" style="position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 8px; width: 200px; padding: 8px; background: rgba(0,0,0,0.9); color: #fff; font-size: 9px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 201; line-height: 1.4; font-weight: normal; text-align: center;">
+            A seed number is a unique code that determines the exact colors, layout, and effects of the artwork. Paste a seed to recreate a specific design.
+          </div>
+        </div>
+        <br />
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button id="seedCancel" style="padding: 8px 16px; cursor: pointer; background: transparent; color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; font-family: inherit; font-size: 10px; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.color='#fff'" onmouseout="this.style.background='transparent'; this.style.color='rgba(255,255,255,0.7)'">Cancel</button>
+          <button id="seedPaste" style="padding: 8px 16px; cursor: pointer; background: transparent; color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; font-family: inherit; font-size: 10px; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.color='#fff'" onmouseout="this.style.background='transparent'; this.style.color='rgba(255,255,255,0.7)'">Paste</button>
+          <button id="seedSubmit" style="padding: 8px 16px; cursor: pointer; background: #fff; color: #000; border: 1px solid #fff; border-radius: 6px; font-family: inherit; font-size: 10px; font-weight: 600; transition: all 0.2s;" onmouseover="this.style.background='#e0e0e0'; this.style.borderColor='#e0e0e0'" onmouseout="this.style.background='#fff'; this.style.borderColor='#fff'">Apply</button>
         </div>
       </div>
-      <br />
-      <div style="display: flex; gap: 10px; justify-content: center;">
-        <button id="seedCancel" style="padding: 8px 16px; cursor: pointer; background: transparent; color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; font-family: inherit; font-size: 10px; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.color='#fff'" onmouseout="this.style.background='transparent'; this.style.color='rgba(255,255,255,0.7)'">Cancel</button>
-        <button id="seedPaste" style="padding: 8px 16px; cursor: pointer; background: transparent; color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; font-family: inherit; font-size: 10px; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.color='#fff'" onmouseout="this.style.background='transparent'; this.style.color='rgba(255,255,255,0.7)'">Paste</button>
-        <button id="seedSubmit" style="padding: 8px 16px; cursor: pointer; background: #fff; color: #000; border: 1px solid #fff; border-radius: 6px; font-family: inherit; font-size: 10px; font-weight: 600; transition: all 0.2s;" onmouseover="this.style.background='#e0e0e0'; this.style.borderColor='#e0e0e0'" onmouseout="this.style.background='#fff'; this.style.borderColor='#fff'">Apply</button>
+      <div id="seedActionView" style="display: none;">
+        <p style="margin-top: 0; margin-bottom: 16px; font-weight: 600; letter-spacing: 0.5px; opacity: 0.9;">SEED ACTION</p>
+        <p style="margin-bottom: 20px; opacity: 0.8; font-size: 11px;">You already have an active seed.<br>What would you like to do?</p>
+        <div style="display: flex; gap: 10px; justify-content: center; margin-bottom: 15px;">
+          <button id="seedReplace" style="padding: 8px 16px; cursor: pointer; background: transparent; color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; font-family: inherit; font-size: 10px; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.color='#fff'" onmouseout="this.style.background='transparent'; this.style.color='rgba(255,255,255,0.7)'">Replace Current</button>
+          <button id="seedQueue" style="padding: 8px 16px; cursor: pointer; background: #fff; color: #000; border: 1px solid #fff; border-radius: 6px; font-family: inherit; font-size: 10px; font-weight: 600; transition: all 0.2s;" onmouseover="this.style.background='#e0e0e0'; this.style.borderColor='#e0e0e0'" onmouseout="this.style.background='#fff'; this.style.borderColor='#fff'">Add to Rotation</button>
+        </div>
+        <button id="seedActionCancel" style="padding: 6px 12px; cursor: pointer; background: transparent; color: rgba(255,255,255,0.5); border: none; font-family: inherit; font-size: 9px; text-decoration: underline;">Cancel</button>
       </div>
     </div>
 
@@ -206,11 +217,17 @@
       // SEED MODAL LOGIC
       // ==========================================================
       let isFirstLoad = true;
-      let customSeed = null;
+      let seedQueue = [];
+      let currentSeedIndex = 0;
+      let lastSeedChangeTime = Date.now();
+      const SEED_DURATION = 30 * 60 * 1000; // 30 minutes
+      let pendingSeed = null;
 
       document.addEventListener("click", function (e) {
         if (e.target.tagName === "CANVAS") {
           document.getElementById("seedModal").style.display = "block";
+          document.getElementById("seedInputView").style.display = "block";
+          document.getElementById("seedActionView").style.display = "none";
           document.getElementById("seedInput").focus();
         }
       });
@@ -220,11 +237,41 @@
         if (val) {
           let parsed = parseInt(val, 10);
           if (!isNaN(parsed)) {
-            customSeed = parsed;
-            isFirstLoad = false;
-            resetAnimation = true;
+            pendingSeed = parsed;
+            if (seedQueue.length > 0) {
+              document.getElementById("seedInputView").style.display = "none";
+              document.getElementById("seedActionView").style.display = "block";
+            } else {
+              seedQueue.push(pendingSeed);
+              currentSeedIndex = 0;
+              isFirstLoad = false;
+              lastSeedChangeTime = Date.now();
+              resetAnimation = true;
+              document.getElementById("seedModal").style.display = "none";
+            }
           }
         }
+      });
+
+      document.getElementById("seedReplace").addEventListener("click", function () {
+        seedQueue = [pendingSeed];
+        currentSeedIndex = 0;
+        isFirstLoad = false;
+        lastSeedChangeTime = Date.now();
+        resetAnimation = true;
+        document.getElementById("seedModal").style.display = "none";
+      });
+
+      document.getElementById("seedQueue").addEventListener("click", function () {
+        if (seedQueue.length < 16) {
+          seedQueue.push(pendingSeed);
+        } else {
+          alert("Maximum of 16 seeds allowed in rotation.");
+        }
+        document.getElementById("seedModal").style.display = "none";
+      });
+
+      document.getElementById("seedActionCancel").addEventListener("click", function () {
         document.getElementById("seedModal").style.display = "none";
       });
 
@@ -1008,9 +1055,9 @@
 
         // Generate a single integer seed from EditArt's randomFull()
         // This seed can be copied to the Master version to recreate the exact artwork
-        if (customSeed !== null) {
-          initialSeed = customSeed;
-          masterSeed = customSeed;
+        if (seedQueue.length > 0) {
+          initialSeed = seedQueue[currentSeedIndex];
+          masterSeed = seedQueue[currentSeedIndex];
         } else if (isFirstLoad) {
           initialSeed = 0;
           masterSeed = 0;
@@ -1071,6 +1118,14 @@
       }
 
       function draw() {
+        if (seedQueue.length > 1) {
+          if (Date.now() - lastSeedChangeTime > SEED_DURATION) {
+            currentSeedIndex = (currentSeedIndex + 1) % seedQueue.length;
+            lastSeedChangeTime = Date.now();
+            resetAnimation = true;
+          }
+        }
+
         if (resetAnimation) {
           initArtwork();
           resetAnimation = false;
