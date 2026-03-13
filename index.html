@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Pixel Mosher</title>
+  <title>Pixel Mosher - master</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
@@ -227,12 +227,17 @@
 
   <div id="seedModal">
     <div class="modal-content">
-      <div class="modal-title">ENTER SEED</div>
-      <textarea id="seedInput" spellcheck="false" placeholder="Enter up to 128 seeds (one per line)..."></textarea>
-      <div class="modal-buttons">
+      <div class="modal-title" id="modalTitle">ENTER SEED</div>
+      <textarea id="seedInput" spellcheck="false" placeholder="Enter seeds (comma or line separated)..."></textarea>
+      <div class="modal-buttons" id="standardButtons">
         <button id="cancelBtn">Cancel</button>
         <button id="pasteBtn">Paste</button>
         <button id="applyBtn" class="primary">Apply</button>
+      </div>
+      <div class="modal-buttons" id="confirmButtons" style="display: none;">
+        <button id="cancelConfirmBtn">Cancel</button>
+        <button id="appendBtn" class="primary">Append</button>
+        <button id="replaceBtn" class="primary">Replace</button>
       </div>
     </div>
   </div>
@@ -256,9 +261,10 @@
     window.isOverlayManuallyHidden = false;
 
     window.addEventListener("pointerdown", function (e) {
-      if (e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT" && e.target.id !== "seedModal" && !e.target.closest('.modal-content')) {
+      if (e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA" && e.target.id !== "seedModal" && !e.target.closest('.modal-content')) {
         let modal = document.getElementById("seedModal");
         if (window.getComputedStyle(modal).display === "none") {
+          resetModalState();
           modal.style.display = "flex";
           document.getElementById("seedInput").focus();
         }
@@ -277,9 +283,22 @@
       }
     });
 
-    document.getElementById("cancelBtn").addEventListener("click", () => {
+    function resetModalState() {
+      const title = document.getElementById("modalTitle");
+      if(title) title.innerText = "ENTER SEED";
+      document.getElementById("seedInput").style.display = "block";
+      document.getElementById("seedInput").value = "";
+      document.getElementById("standardButtons").style.display = "flex";
+      document.getElementById("confirmButtons").style.display = "none";
+    }
+
+    function closeModal() {
       document.getElementById("seedModal").style.display = "none";
-    });
+      resetModalState();
+    }
+
+    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+    document.getElementById("cancelConfirmBtn").addEventListener("click", closeModal);
 
     document.getElementById("pasteBtn").addEventListener("click", async () => {
       try {
@@ -290,25 +309,50 @@
       }
     });
 
+    let pendingSeeds = [];
+
     document.getElementById("applyBtn").addEventListener("click", () => {
       const inputText = document.getElementById("seedInput").value;
-      // Strip "Seed: " prefix from manual highlights, then split by whitespace/newlines, filter out empty, slice to max 128
       const cleanInput = inputText.replace(/seed:\s*/gi, "");
-      const rawSeeds = cleanInput.split(/\s+/).filter(s => s.trim().length > 0).slice(0, 128);
+      // Support space, newline, or comma-separated lists
+      const rawSeeds = cleanInput.split(/[\s,]+/).filter(s => s.trim().length > 0).slice(0, 128);
 
       if (rawSeeds.length > 0) {
+        if (rawSeeds.length === 1 && window.seedGallery && window.seedGallery.length > 0 && !window.isDefaultMode) {
+           pendingSeeds = rawSeeds;
+           document.getElementById("modalTitle").innerText = "APPEND OR REPLACE?";
+           document.getElementById("seedInput").style.display = "none";
+           document.getElementById("standardButtons").style.display = "none";
+           document.getElementById("confirmButtons").style.display = "flex";
+           return;
+        }
+        applySeeds(rawSeeds);
+      } else {
+        closeModal();
+      }
+    });
+
+    document.getElementById("appendBtn").addEventListener("click", () => {
+        window.seedGallery.push(pendingSeeds[0]);
+        if (window.seedGallery.length > 128) window.seedGallery.shift();
+        closeModal();
+    });
+
+    document.getElementById("replaceBtn").addEventListener("click", () => {
+        applySeeds(pendingSeeds);
+    });
+
+    function applySeeds(seeds) {
         window.isDefaultMode = false;
-        window.seedGallery = rawSeeds;
+        window.seedGallery = seeds;
         window.currentSeedIndex = 0;
         window.lastRotationTime = millis();
 
         setBootloaderSeed(window.seedGallery[window.currentSeedIndex]);
         resetAnimation = true;
         if (typeof isLooping === "function" && !isLooping()) redraw();
-      }
-
-      document.getElementById("seedModal").style.display = "none";
-    });
+        closeModal();
+    }
 
     window.addEventListener("pointermove", function (e) {
       if (e.pointerType === "mouse") {
