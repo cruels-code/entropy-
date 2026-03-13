@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>CTRL P</title>
+  <title>Pixel Mosher</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
@@ -228,7 +228,7 @@
   <div id="seedModal">
     <div class="modal-content">
       <div class="modal-title">ENTER SEED</div>
-      <input type="text" id="seedInput" value="" autocomplete="off" spellcheck="false" />
+      <textarea id="seedInput" spellcheck="false" placeholder="Enter up to 128 seeds (one per line)..."></textarea>
       <div class="modal-buttons">
         <button id="cancelBtn">Cancel</button>
         <button id="pasteBtn">Paste</button>
@@ -292,8 +292,9 @@
 
     document.getElementById("applyBtn").addEventListener("click", () => {
       const inputText = document.getElementById("seedInput").value;
-      // Split by whitespace/newlines, filter out empty, slice to max 128
-      const rawSeeds = inputText.split(/\s+/).filter(s => s.trim().length > 0).slice(0, 128);
+      // Strip "Seed: " prefix from manual highlights, then split by whitespace/newlines, filter out empty, slice to max 128
+      const cleanInput = inputText.replace(/seed:\s*/gi, "");
+      const rawSeeds = cleanInput.split(/\s+/).filter(s => s.trim().length > 0).slice(0, 128);
 
       if (rawSeeds.length > 0) {
         window.isDefaultMode = false;
@@ -861,32 +862,23 @@
         this.gridRows = gridRows;
         this.maxRectangleCount = maxRectangleCount;
         this.splitDepth = splitDepth;
-        this.spacing = Math.max(0, Math.floor(spacing));
         this.rectangles = [];
       }
 
       initializeRectangles() {
         this.rectangles = [];
         const container = {
-          x: 0,
-          y: 0,
-          width: Math.floor(this.gridCols),
-          height: Math.floor(this.gridRows),
+          x: 0.0,
+          y: 0.0,
+          width: 1.0,
+          height: 1.0,
         };
         this.splitSpace(container, 0);
-        if (this.rectangles.length > this.maxRectangleCount)
-          this.rectangles.length = this.maxRectangleCount;
 
         while (this.rectangles.length < this.maxRectangleCount) {
           this.rectangles.push({
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0,
-            vx: 0,
-            vy: 0,
-            targetVx: 0,
-            targetVy: 0,
+            x: 0, y: 0, width: 0, height: 0,
+            vx: 0, vy: 0, targetVx: 0, targetVy: 0,
           });
         }
       }
@@ -896,81 +888,25 @@
           depth >= this.splitDepth ||
           this.rectangles.length >= this.maxRectangleCount
         ) {
-          const vx = (eaRandom() - 0.5) * CONFIG.movement.zoneSpeedMax;
-          const vy = (eaRandom() - 0.5) * CONFIG.movement.zoneSpeedMax;
-          this.rectangles.push({
-            ...container,
-            vx,
-            vy,
-            targetVx: vx,
-            targetVy: vy,
-          });
+          const vx = ((eaRandom() - 0.5) * CONFIG.movement.zoneSpeedMax) / this.gridCols;
+          const vy = ((eaRandom() - 0.5) * CONFIG.movement.zoneSpeedMax) / this.gridRows;
+          this.rectangles.push({ ...container, vx, vy, targetVx: vx, targetVy: vy });
           return;
         }
+
         const horiz = eaRandom() > 0.5;
         if (horiz) {
-          if (container.height < this.spacing + 2) {
-            this.rectangles.push({
-              ...container,
-              vx: 0,
-              vy: 0,
-              targetVx: 0,
-              targetVy: 0,
-            });
-            return;
-          }
-          const sp =
-            Math.floor(eaRandom() * (container.height - this.spacing - 1)) +
-            1;
-          this.splitSpace(
-            {
-              x: container.x,
-              y: container.y,
-              width: container.width,
-              height: sp,
-            },
-            depth + 1,
-          );
-          this.splitSpace(
-            {
-              x: container.x,
-              y: container.y + sp + this.spacing,
-              width: container.width,
-              height: container.height - sp - this.spacing,
-            },
-            depth + 1,
-          );
+          const spRatio = 0.1 + eaRandom() * 0.8;
+          const sp = container.height * spRatio;
+
+          this.splitSpace({ x: container.x, y: container.y, width: container.width, height: sp }, depth + 1);
+          this.splitSpace({ x: container.x, y: container.y + sp, width: container.width, height: container.height - sp }, depth + 1);
         } else {
-          if (container.width < this.spacing + 2) {
-            this.rectangles.push({
-              ...container,
-              vx: 0,
-              vy: 0,
-              targetVx: 0,
-              targetVy: 0,
-            });
-            return;
-          }
-          const sp =
-            Math.floor(eaRandom() * (container.width - this.spacing - 1)) + 1;
-          this.splitSpace(
-            {
-              x: container.x,
-              y: container.y,
-              width: sp,
-              height: container.height,
-            },
-            depth + 1,
-          );
-          this.splitSpace(
-            {
-              x: container.x + sp + this.spacing,
-              y: container.y,
-              width: container.width - sp - this.spacing,
-              height: container.height,
-            },
-            depth + 1,
-          );
+          const spRatio = 0.1 + eaRandom() * 0.8;
+          const sp = container.width * spRatio;
+
+          this.splitSpace({ x: container.x, y: container.y, width: sp, height: container.height }, depth + 1);
+          this.splitSpace({ x: container.x + sp, y: container.y, width: container.width - sp, height: container.height }, depth + 1);
         }
       }
 
@@ -979,12 +915,10 @@
           if (rect.width === 0) return;
 
           if (eaRandom() < CONFIG.movement.stutterChance) {
-            rect.x += (eaRandom() - 0.5) * CONFIG.movement.stutterMagnitude;
-            rect.y += (eaRandom() - 0.5) * CONFIG.movement.stutterMagnitude;
-            rect.targetVx =
-              (eaRandom() - 0.5) * CONFIG.movement.zoneSpeedMax * 2.0;
-            rect.targetVy =
-              (eaRandom() - 0.5) * CONFIG.movement.zoneSpeedMax * 2.0;
+            rect.x += ((eaRandom() - 0.5) * CONFIG.movement.stutterMagnitude) / this.gridCols;
+            rect.y += ((eaRandom() - 0.5) * CONFIG.movement.stutterMagnitude) / this.gridRows;
+            rect.targetVx = ((eaRandom() - 0.5) * CONFIG.movement.zoneSpeedMax * 2.0) / this.gridCols;
+            rect.targetVy = ((eaRandom() - 0.5) * CONFIG.movement.zoneSpeedMax * 2.0) / this.gridRows;
           }
 
           rect.vx += (rect.targetVx - rect.vx) * CONFIG.movement.easing;
@@ -992,17 +926,17 @@
           rect.x += rect.vx;
           rect.y += rect.vy;
 
-          if (rect.x <= 0 || rect.x + rect.width >= this.gridCols) {
-            rect.vx *= -1;
-            rect.targetVx *= -1;
+          if (rect.x <= 0.0 || rect.x + rect.width >= 1.0) {
+            rect.vx *= -1.0;
+            rect.targetVx *= -1.0;
           }
-          if (rect.y <= 0 || rect.y + rect.height >= this.gridRows) {
-            rect.vy *= -1;
-            rect.targetVy *= -1;
+          if (rect.y <= 0.0 || rect.y + rect.height >= 1.0) {
+            rect.vy *= -1.0;
+            rect.targetVy *= -1.0;
           }
 
-          rect.x = Math.max(0, Math.min(rect.x, this.gridCols - rect.width));
-          rect.y = Math.max(0, Math.min(rect.y, this.gridRows - rect.height));
+          rect.x = Math.max(0.0, Math.min(rect.x, 1.0 - rect.width));
+          rect.y = Math.max(0.0, Math.min(rect.y, 1.0 - rect.height));
         });
       }
     }
@@ -1156,7 +1090,7 @@
       for (let i = 0; i < CONFIG.simulation.numZones; i++) {
         let r = rectManager.rectangles[i];
         if (r)
-          shdShift.setUniform(`u_rect${i}`, [r.x, r.y, r.width, r.height]);
+          shdShift.setUniform(`u_rect${i}`, [r.x * width, r.y * height, r.width * width, r.height * height]);
         let eff = layer1Effects[i];
         if (eff) {
           shdShift.setUniform(`u_effect${i}`, eff.id);
@@ -1177,7 +1111,7 @@
       for (let i = 0; i < CONFIG.simulation.numZones; i++) {
         let r = rectManager.rectangles[i];
         if (r)
-          shdPush.setUniform(`u_rect${i}`, [r.x, r.y, r.width, r.height]);
+          shdPush.setUniform(`u_rect${i}`, [r.x * width, r.y * height, r.width * width, r.height * height]);
         let eff = layer1Effects[i];
         if (eff) {
           shdPush.setUniform(`u_effect${i}`, eff.id);
